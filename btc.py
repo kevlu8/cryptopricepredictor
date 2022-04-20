@@ -1,3 +1,4 @@
+from numpy import dtype
 import net
 import os
 
@@ -32,9 +33,8 @@ class Loader(net.torch.utils.data.Dataset):
 			for line in f:
 				if line.startswith("SNo"):
 					continue # first line is header
-				date = line.split(",")[3]
 				close = float(line.split(",")[7])
-				self.data.append((date, close))
+				self.data.append(close)
 		# self.data.reverse()
 	def __len__(self):
 		return len(self.data)
@@ -47,34 +47,32 @@ if args.train:
 		# load data from csv file using Loader class
 		loader = Loader("data/btc.csv")
 		# create dataloader for training and testing data
-		train_loader = net.torch.utils.data.DataLoader(loader, batch_size=32, shuffle=True)
+		train_loader = net.torch.utils.data.DataLoader(loader, batch_size=1024)
 		# train the model
 		print("Training model...")
-		# input is 3 numbers in a tensor: [price, time, predictNDays]
-        # price is the current price at the time
-        # predictNDays is the number of days from the current time to predict
-        # output the predicted price
+		# input is 1 tensor: [allPrices]
+		# allPrices is a tensor of all prices
+		# output is a tensor of predicted prices for the next 1024 days
 		for epoch in range(args.epochs):
 			# measure time for each epoch
 			start = net.time.time()
-			for i, (date, close) in enumerate(train_loader):
+			for i, close in enumerate(train_loader):
 				optim.zero_grad()
-				# convert datetime to unix timestamp
-				# YYYY-MM-DD HH:MM:SS
-				timestamp = net.datetime_to_timestamp(date[i])
+				# split close into 2 tensors of equal size
+				close_a = close[:round(len(close)/2)]
+				close_b = close[(len(close_a + 1)):]
 				# convert close to tensor
-				close_b = net.torch.tensor(close[i]).to(net.device)
-				# convert timestamp to tensor
-				timestamp = net.torch.tensor(timestamp).to(net.device)
-				# predict 1 day
-				predictNDays = 1
-				# create input tensor
-				input = net.torch.tensor([[close_b, timestamp, predictNDays]]).to(net.device)
-				# forward pass
-				prediction = btcpredict(input.float())
+				close_a = net.torch.tensor(close_a, device=net.device, dtype=net.torch.float32)
+				close_b = net.torch.tensor(close_b, device=net.device, dtype=net.torch.float32)
+				# start training
+				prediction = btcpredict(close_a)
+				# print(prediction)
 				# calculate loss
-				loss = net.nn.MSELoss()(prediction, close_b)
-				# backward pass
+				# convert prediction from [1024, 1] to [1024]
+				prediction = prediction.view(-1)
+				# print(prediction)
+				loss = net.torch.nn.MSELoss()(prediction, close_b)
+				# backpropagate
 				loss.backward()
 				optim.step()
 			# time
@@ -90,24 +88,22 @@ else:
 		print("Loading data...")
 		# load data from csv file using Loader class
 		loader = Loader("data/btc.csv")
-		# create dataloader for training and testing data
-		test_loader = net.torch.utils.data.DataLoader(loader, batch_size=32, shuffle=True)
+		# get last 1024 prices
+		last_1024 = loader.data[-1024:]
+		# convert to tensor
+		last_1024 = net.torch.tensor(last_1024, device=net.device, dtype=net.torch.float32)
 		# test model
-		print("Testing model...")
-		for i, (date, close) in enumerate(test_loader):
-			# convert date to tensor
-			date = net.torch.tensor(date, dtype=net.torch.float)
-			# convert close to tensor
-			close = net.torch.tensor(close, dtype=net.torch.float)
-			# reshape close to (batch_size, 1)
-			close = close.reshape(close.shape[0], 1)
-			# forward pass
-			pred = btcpredict(date)
-			# calculate loss
-			loss = net.torch.nn.MSELoss()(pred, close)
-			if i % 100 == 0:
-				print("Prediction: {}".format(pred.item()))
-				print("Close: {}".format(close.item()))
-				print("")
+		print("Using model to predict next prices...")
+		# predict
+		btcpredict.eval()
+		prediction = btcpredict(last_1024)
+		# print prediction
+		predictions = prediction.detach().cpu().numpy().tolist()
+		print("Predictions: {}".format(predictions))
+		import matplotlib.pyplot as plt
+		plt.plot(loader.data[-1024:])
+		plt.plot(predictions)
+		plt.title("BTC Prive over next 1024 days")
+		plt.show()
 	else:
 		print("No data found")
