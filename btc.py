@@ -47,20 +47,22 @@ if args.train:
 		# load data from csv file using Loader class
 		loader = Loader("data/btc.csv")
 		# create dataloader for training and testing data
-		train_loader = net.torch.utils.data.DataLoader(loader, batch_size=1024)
+		train_loader = net.torch.utils.data.DataLoader(loader, batch_size=512)
 		# train the model
 		print("Training model...")
 		# input is 1 tensor: [allPrices]
 		# allPrices is a tensor of all prices
-		# output is a tensor of predicted prices for the next 1024 days
+		# output is a tensor of predicted prices for the next 512 days
 		for epoch in range(args.epochs):
 			# measure time for each epoch
 			start = net.time.time()
 			for i, close in enumerate(train_loader):
+				if len(close) != 512:
+					continue
 				optim.zero_grad()
 				# split close into 2 tensors of equal size
-				close_a = close[:round(len(close)/2)]
-				close_b = close[(len(close_a + 1)):]
+				close_a = close[:256]
+				close_b = close[256:]
 				# convert close to tensor
 				close_a = net.torch.tensor(close_a, device=net.device, dtype=net.torch.float32)
 				close_b = net.torch.tensor(close_b, device=net.device, dtype=net.torch.float32)
@@ -68,10 +70,11 @@ if args.train:
 				prediction = btcpredict(close_a)
 				# print(prediction)
 				# calculate loss
-				# convert prediction from [1024, 1] to [1024]
+				# convert prediction from [512, 1] to [512]
 				prediction = prediction.view(-1)
+				close_b = close_b.view(-1)
 				# print(prediction)
-				loss = net.torch.nn.MSELoss()(prediction, close_b)
+				loss = net.F.mse_loss(prediction, close_b)
 				# backpropagate
 				loss.backward()
 				optim.step()
@@ -79,8 +82,12 @@ if args.train:
 			end = net.time.time()
 			# print progress
 			if epoch % 100 == 0:
-				print("Epoch: {}, Loss: {}, Time: {}s".format(epoch, loss.item(), round(end-start, 3)))
+				try:
+					print("Epoch: {}, Loss: {}, Time/Epoch: {}s".format(epoch, loss.item(), round(end-start, 3)))
+				except NameError:
+					print("Fuck")
 				net.torch.save({"model": btcpredict.state_dict(), "optim": optim.state_dict()}, "models/btc.pt")
+		net.torch.save({"model": btcpredict.state_dict(), "optim": optim.state_dict()}, "models/btc.pt")
 	else:
 		print("No data found")
 else:
@@ -88,22 +95,21 @@ else:
 		print("Loading data...")
 		# load data from csv file using Loader class
 		loader = Loader("data/btc.csv")
-		# get last 1024 prices
-		last_1024 = loader.data[-1024:]
+		# get last 512 prices
+		last_512 = loader.data[-512:]
 		# convert to tensor
-		last_1024 = net.torch.tensor(last_1024, device=net.device, dtype=net.torch.float32)
+		last_512 = net.torch.tensor(last_512, device=net.device, dtype=net.torch.float32)
 		# test model
 		print("Using model to predict next prices...")
 		# predict
 		btcpredict.eval()
-		prediction = btcpredict(last_1024)
+		prediction = btcpredict(last_512)
 		# print prediction
 		predictions = prediction.detach().cpu().numpy().tolist()
 		print("Predictions: {}".format(predictions))
 		import matplotlib.pyplot as plt
-		plt.plot(loader.data[-1024:])
 		plt.plot(predictions)
-		plt.title("BTC Prive over next 1024 days")
+		plt.title("BTC Price over next 512 days")
 		plt.show()
 	else:
 		print("No data found")

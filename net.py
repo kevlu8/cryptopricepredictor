@@ -19,9 +19,9 @@ class PredictionNet(nn.Module):
 		# input is 1 tensor: [allPrices]
 		# allPrices is a tensor of all prices
 		# output is a tensor of predicted prices for the next 1024 days 
-		self.fc1 = nn.Linear(1, 1024)
-		self.fc2 = nn.Linear(1024, 1024)
-		self.fc3 = nn.Linear(1024, 1)
+		self.fc1 = nn.Linear(1, 512)
+		self.fc2 = nn.Linear(512, 4096)
+		self.fc3 = nn.Linear(4096, 1)
 		self.dropout = nn.Dropout(0.2)
 		self.relu = nn.ReLU()
 
